@@ -23,19 +23,20 @@ However it cannot check for the deadlock scenario because there is not point in 
 To be specific if you look at the code below,
 ```bash
     if(LOCKED == *(t->lock)) {
-        perror("Deadlock");
+        perror("LOCK IS ALREADY LOCKED\n");
         return -1;
     }
 ```
-If we add this statement before we lock, than it will never reach the spin lock below, therefore there is no point of using it. 
+If we add this statement before we use spin lock, than it will never reach it, therefore there is no point of using it. 
 
-Instead of doing this, I have added THIS CODE after spin lock, 
+Instead of doing this, I have added "THIS CODE" after spin lock, 
+
 ```bash
     while(!__atomic_compare_exchange_n(t->lock, &expected,
         LOCKED, 1, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
             expected = UNLOCKED;  
     }
-    //THIS CODE
+    //"THIS CODE"
     if(1 != *(t->lock)) {
         perror("==UNDEFINED BEHAVIOR==\n"); 
         perror("Spin lock didn't execute correctly\n");
@@ -44,15 +45,17 @@ Instead of doing this, I have added THIS CODE after spin lock,
         return -1;
     }
 ```
-which will insure the value stays as locked after it executes the spin lock.
-This will also ensure that other threads are not trying to access the same lock and unlocking it. 
+This will insure the lock value stays as locked after it executes the spin lock.
+This will also ensure to notify the user when other threads are not trying to access the same lock and unlocking it. 
 
 
 ## tas_unlock function (defensive coding)
 ```bash
     __atomic_store_n(t->lock, UNLOCKED, __ATOMIC_SEQ_CST);
 ```
-Instead of unlocking the function with aboe sentense it will use 
+
+Instead of unlocking the function with above sentense I have used 
+
 ```bash
     if(!__atomic_compare_exchange_n(t->lock, &expected,
         UNLOCKED, 1, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
@@ -63,7 +66,7 @@ Instead of unlocking the function with aboe sentense it will use
             perror("OR Multiple threads might be accessing the same lock\n");
             //This means theire is an error state where us user might be trying to free it twice
             return -1;
-            
+
     }
 ```
-This method CAS functionality which can ensure that is does not free the item twitce. When unlock function is called, the lock should be in UNLOCKED state otherwise this code will tell that that the lock is already unlocked..
+CAS functionality. This can ensure that is does not unlock the item twitce. When unlock function is called, the lock should be in LOCKED state otherwise this code will tell that that the lock is already unlocked.
