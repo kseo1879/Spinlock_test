@@ -7,8 +7,8 @@
 #define LOCKED (1)
 #define UNLOCKED (0)
 
-#define TEST_ITERATION (1000000)
-#define N_THREADS (4)
+#define TEST_ITERATION (100000)
+#define N_THREADS (2)
 
 struct tas {
     int *lock;
@@ -43,7 +43,7 @@ int tas_lock(struct tas *t) {
     if(NULL == t) {
         perror("tas is not initialized\n");
         return -1;
-    } 
+    }
     //This will loop until the lock resourse is unlocked.
     while(!__atomic_compare_exchange_n(t->lock, &expected,
         LOCKED, 1, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
@@ -51,7 +51,10 @@ int tas_lock(struct tas *t) {
     }
     //THis is to make sure that it leaved the funtion with the correct lock value.
     if(1 != *(t->lock)) {
-        perror("Spin lock dident execute correctly\n");
+        perror("==UNDEFINED BEHAVIOR==\n"); 
+        perror("Spin lock didn't execute correctly\n");
+        perror("The lock is not locked correctly\n");
+        perror("Or Multiple threads might be accessing the same lock and unlcocked it.\n");
         return -1;
     }
     return 0;
@@ -69,7 +72,18 @@ int tas_unlock(struct tas *t) {
         perror("tas is not initialized\n");
         return -1;
     } 
-    __atomic_store_n(t->lock, UNLOCKED, __ATOMIC_SEQ_CST);
+    int expected = LOCKED;
+    if(!__atomic_compare_exchange_n(t->lock, &expected,
+        UNLOCKED, 1, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+            expected = LOCKED;
+            perror("==UNDEFINED BEHAVIOR==\n");            
+            perror("The lock is already unlocked\n");
+            perror("It may be trying to double free\n");
+            perror("Or Multiple threads might be accessing the same lock\n");
+            //This means theire is an error state where us user might be trying to free it twice
+            return -1;
+    }
+    // __atomic_store_n(t->lock, UNLOCKED, __ATOMIC_SEQ_CST);
     return 0;
 }
 
@@ -86,15 +100,16 @@ int tas_destory(struct tas *t) {
 //Testing Function
 void* worker(void *args) {
     struct data *data = (struct data *)args;
-    // if you change line 93 and 95 with 91 and 97 it still works.
     // The intention here was to give more stree to the lock and unlock function.
-    // //tas_lock(data->tas);
+    // However it will also work with the lock outside of for loop instead of using 
+    // the locks inside of it.
+    // tas_lock(data->tas);
     for(int i = 0; i < TEST_ITERATION; i++) {
         tas_lock(data->tas);
         *(data->counter) = *(data->counter) + 1;
         tas_unlock(data->tas);
     }
-    // //tas_unlock(data->tas);
+    // tas_unlock(data->tas);
     // Without the lock specified it will created issues with unintended sharing.
 }
 
